@@ -1,20 +1,14 @@
 require 'torch'
 require 'nn'
 require 'nngraph'
-require 'debug'
--- exotics
 require 'loadcaffe'
+
 -- local imports
 utils = require 'misc.utils'
-require 'misc.DataLoader'
 require 'misc.DataLoaderRaw'
 require 'misc.LanguageModel'
 net_utils = require 'misc.net_utils'
 beam_utils = require 'dbs.beam_utils'
--- div_utils = require 'dbs.div_utils'
--- vis_utils = require 'misc.vis_utils'
-
-local debug = require 'debug'
 
 -------------------------------------------------------------------------------
 -- Input arguments and options
@@ -31,35 +25,24 @@ cmd:option('-model','','path to model to evaluate')
 -- Basic options
 cmd:option('-batch_size', 1, 'if > 0 then overrule, otherwise load from checkpoint.')
 cmd:option('-num_images', 1, 'how many images to use when periodically evaluating the loss? (-1 = all)')
--- cmd:option('-language_eval', 0, 'Evaluate language as well (1 = yes, 0 = no)? BLEU/CIDEr/METEOR/ROUGE_L? requires coco-caption code from Github.')
-cmd:option('-dump_images', 1, 'Dump images into vis/imgs folder for vis? (1=yes,0=no)')
 cmd:option('-dump_json', 1, 'Dump json with predictions into vis folder? (1=yes,0=no)')
--- cmd:option('-dump_path', 0, 'Write image paths along with predictions into vis json? (1=yes,0=no)')
 
 -- Sampling options
--- cmd:option('-sample_max', 1, '1 = sample argmax words. 0 = sample from distributions.')
-cmd:option('-B', 2, 'used when sample_max = 1, indicates number of beams in beam search. Usually 2 or 3 works well. More is not better. Set this to 1 for faster runtime but a bit worse performance.')
-cmd:option('-M',2,'number of diverse groups')
+cmd:option('-B', 2, 'Beam width - number of beams needed overall')
+cmd:option('-G',2,'number of diverse groups')
 cmd:option('-lambda', 0.5, 'diversity penalty')
--- cmd:option('-divmode', 0, '1 to turn on cumulative_diversity')
--- cmd:option('-temperature', 1.0, 'temperature when sampling from distributions (i.e. when sample_max = 0). Lower = "safer" predictions.')
 cmd:option('-primetext', "", 'used as a prompt to "seed" the state of the LSTM using a given sequence, before we sample.')
 -- For evaluation on a folder of images:
 cmd:option('-image_folder', '', 'If this is nonempty then will predict on the images in this folder path')
 cmd:option('-image_root', '', 'In case the image paths have to be preprended with a root path to an image folder')
 -- For evaluation on MSCOCO images from some split:
-cmd:option('-input_h5','','path to the h5file containing the preprocessed dataset. empty = fetch from model checkpoint.')
-cmd:option('-input_json','','path to the json file containing additional info and vocab. empty = fetch from model checkpoint.')
  cmd:option('-split', 'test', 'if running on MSCOCO images, which split to use: val|test|train')
- cmd:option('-coco_json', '', 'if nonempty then use this file in DataLoaderRaw (see docs there). Used only in MSCOCO test evaluation, where we have a specific json file of only test set images.')
 
 -- misc
 cmd:option('-backend', 'cudnn', 'nn|cudnn')
 cmd:option('-id', 'evalscript', 'an id identifying this run/job. used only if language_eval = 1 for appending to intermediate files')
 cmd:option('-seed', 123, 'random number generator seed to use')
 cmd:option('-gpuid', -1, 'which gpu to use. -1 = use CPU')
--- cmd:option('-div_vis_dir', '', 'store information for the div rnn vis in this directory; it should already exist')
--- cmd:option('-baseline',-1,'implements the stanford baseline if >=0 with strength equal to the set value. -1 implements conventional DBS -- use M = 1 and opt.baseline >0 to run stanford baseline')
 cmd:text()
 
 -------------------------------------------------------------------------------
@@ -95,8 +78,6 @@ assert(string.len(opt.model) > 0, 'must provide a model')
 print(opt.model)
 local checkpoint = torch.load(opt.model)
 -- override and collect parameters
-if string.len(opt.input_h5) == 0 then opt.input_h5 = checkpoint.opt.input_h5 end
-if string.len(opt.input_json) == 0 then opt.input_json = checkpoint.opt.input_json end
 if opt.batch_size == 0 then opt.batch_size = checkpoint.opt.batch_size end
 local fetch = {'rnn_size', 'input_encoding_size', 'drop_prob_lm', 'cnn_proto', 'cnn_model', 'seq_per_img'}
 for k,v in pairs(fetch) do 
@@ -107,13 +88,7 @@ local inv_vocab = table_invert(checkpoint.vocab)
 -------------------------------------------------------------------------------
 -- Create the Data Loader instance
 -------------------------------------------------------------------------------
-local loader
-if string.len(opt.image_folder) == 0 then
-  loader = DataLoader{h5_file = opt.input_h5, json_file = opt.input_json}
-else
-  loader = DataLoaderRaw{folder_path = opt.image_folder, coco_json = opt.coco_json}
-end
-
+local loader = DataLoaderRaw{folder_path = opt.image_folder,coco_json= ''}
 -------------------------------------------------------------------------------
 -- Load the networks from model checkpoint
 -------------------------------------------------------------------------------
@@ -122,7 +97,6 @@ protos.expander = nn.FeatExpander(opt.seq_per_img)
 protos.crit = nn.LanguageModelCriterion()
 protos.lm:createClones() -- reconstruct clones inside the language model
 if opt.gpuid >= 0 then for k,v in pairs(protos) do v:cuda() end end
-
 
 -------------------------------------------------------------------------------
 -- Evaluation fun(ction)
@@ -139,23 +113,12 @@ local function eval_split(split, evalopt)
   local loss_evals = 0
   local final_beams = {}
   while true do
-
     -- fetch a batch of data
     local data = loader:getBatch{batch_size = opt.batch_size, split = split, seq_per_img = opt.seq_per_img}
     data.images = net_utils.prepro(data.images, false, opt.gpuid >= 0) -- preprocess in place, and don't augment
     n = n + data.images:size(1)
     -- forward the model to get loss
     local feats = protos.cnn:forward(data.images)
-
-    -- evaluate loss if we have the labels
-    local loss = 0
-    if data.labels then
-      local expanded_feats = protos.expander:forward(feats)
-      local logprobs = protos.lm:forward{expanded_feats, data.labels}
-      loss = protos.crit:forward(logprobs, data.labels)
-      loss_sum = loss_sum + loss
-      loss_evals = loss_evals + 1
-    end
 
     local function gen_logprobs(word_ix, state)
         local embedding = protos.lm.lookup_table:forward(word_ix)
@@ -167,7 +130,7 @@ local function eval_split(split, evalopt)
     local sample_opts = {
         T = protos.lm.seq_length,
         B = opt.B,
-        M = opt.M,
+        M = opt.G,
         lambda = opt.lambda,
         temperature = opt.temperature,
         -- size of a state
@@ -262,12 +225,12 @@ local function print_and_dump_beam(opt,beam_table)
 	print('----------------------------------------------------')
   local function compare_beam(a,b) return a.logp > b.logp end
 	json_table = {}
-	bdash = opt.B / opt.M
+	bdash = opt.B / opt.G
   for im_n = 1,#beam_table do
 		json_table[im_n] = {}
 		json_table[im_n]['image_id'] = beam_table[im_n]['image_id']
 		json_table[im_n]['captions'] = {}
-		for i = 1,opt.M do
+		for i = 1,opt.G do
 			for j = 1,bdash do
 				current_beam_string = table.concat(net_utils.decode_sequence(vocab, torch.reshape(beam_table[im_n]['caption'][i][j].seq, beam_table[im_n]['caption'][i][j].seq:size(1), 1)))
 				print('beam ' .. (i-1)*bdash+j ..' diverse group: '..i)
@@ -286,7 +249,7 @@ local function print_and_dump_beam(opt,beam_table)
 	end
 	if opt.dump_json == 1 then
 		-- dump the json
-		utils.write_json('amt_all_images_0.4.json', json_table)
+		utils.write_json(opt.image_folder .. tostring(opt.B) .. '_' .. tostring(opt.G) .. 'json', json_table)
 	end
 	return json_table
 end
