@@ -249,7 +249,7 @@ local function print_and_dump_beam(opt,beam_table)
 	end
 	if opt.dump_json == 1 then
 		-- dump the json
-		utils.write_json(opt.image_folder .. tostring(opt.B) .. '_' .. tostring(opt.G) .. 'json', json_table)
+		utils.write_json(opt.image_folder .. tostring(opt.B) .. '_' .. tostring(opt.G) .. '.json', json_table)
 	end
 	return json_table
 end
