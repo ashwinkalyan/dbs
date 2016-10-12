@@ -30,6 +30,7 @@ The output of the code will be written to a `json` file that contains all the ge
 The core of our method is in `dbs/beam_utils.lua`. It contains two functions that you will need to replicate:
 - `beam_step` - Performs one expansion of the beams held at any given time. 
 - `beam_search` - Modifies the log-probabilities of the sequences and calls `beam_step` at every time step. This handles both division of the beam budget into groups and augmenting scores with diversity.
+
 ## 3rd party
 - [neuraltalk2][1]
 
