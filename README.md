@@ -18,13 +18,18 @@ Any of the checkpoints distributed by Andrej Karpathy along with the [neuraltalk
 ## Generating Diverse Sequences
 After installing the dependencies, you should be able to obtain diverse captions by: 
 ```
-$ th -model /path/to/model.t7 -num_images 1 -image_folder eval_images -gpuid -1
+$ th eval.lua -model /path/to/model.t7 -num_images 1 -image_folder eval_images -gpuid -1
 ```
 To run a beam search of size 10 with 5 diverse groups and a diversity strength of 0.5 on the same image you would do: 
 ```
-$ th -model /path/to/model.t7 -B 10 -M 5 -lambda 0.5 -num_images 1 -image_folder eval_images -gpuid -1
+$ th eval.lua -model /path/to/model.t7 -B 10 -M 5 -lambda 0.5 -num_images 1 -image_folder eval_images -gpuid -1
 ```
+The output of the code will be written to a `json` file that contains all the generated captions and their scores for each image.
 
+## Using DBS for other tasks
+The core of our method is in `dbs/beam_utils.lua`. It contains two functions that you will need to replicate:
+- `beam_step` - Performs one expansion of the beams held at any given time. 
+- `beam_search` - Modifies the log-probabilities of the sequences and calls `beam_step` at every time step. This handles both division of the beam budget into groups and augmenting scores with diversity.
 ## 3rd party
 - [neuraltalk2][1]
 
