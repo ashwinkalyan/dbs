@@ -2,7 +2,7 @@
 
 **Update:**
 
-Implements ``Mutual Information and Diverse Decoding Improve Neural Machine Translation - Li and Jurafsky 2016`` on top of DBS. Set M=1 and opt.baseline to a factor greater than 0 to run this baseline as mentioned in the instructions in `eval.lua`. 
+Implements the **Diverse Decoding** part (Eq. 15, Section 4.2) of ``Mutual Information and Diverse Decoding Improve Neural Machine Translation - Li and Jurafsky 2016`` on top of DBS. Set M=1 and opt.baseline to a factor greater than 0 to run this baseline as mentioned in the instructions in `eval.lua`. 
 
 This code implements Diverse Beam Search (DBS) - a replacement for beam search that generates diverse sequences from sequence models like LSTMs. This repository lets you generate diverse image-captions for models trained using the popular [neuraltalk2][1] repository. A demo of our implementation on captioning is available at [dbs.cloudcv.org](http://dbs.cloudcv.org/)
 
