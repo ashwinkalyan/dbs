@@ -53,8 +53,8 @@ local function beam_step(logprobsf,unaug_logprobsf,beam_size,t,beam_seq,beam_seq
       local_logprob = ys[{ q,c }]
       candidate_logprob = beam_logprobs_sum[q] + local_logprob
 			if stanford_lamda >= 0 then 
-				stanford_factor = q
-				-- if t == 1 then stanford_factor = c end
+				stanford_factor = c
+                if t == 1 then stanford_factor = c end
 				candidate_logprob = beam_logprobs_sum[q] + local_logprob - stanford_lamda*stanford_factor
 			end
 			local_unaug_logprob = unaug_logprobsf[{q,ix[{q,c}]}]
