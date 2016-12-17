@@ -31,6 +31,14 @@ The core of our method is in `dbs/beam_utils.lua`. It contains two functions tha
 - `beam_step` - Performs one expansion of the beams held at any given time. 
 - `beam_search` - Modifies the log-probabilities of the sequences and calls `beam_step` at every time step. This handles both division of the beam budget into groups and augmenting scores with diversity.
 
+## Li15
+- Checkout branch li15. You can download the language model from [here](https://filebox.ece.vt.edu/~ram21/dbs/language_model.t7) 
+
+You should be able to run this by:
+```
+sh run_msr_eval.sh
+```
+
 ## 3rd party
 - [neuraltalk2][1]
 
